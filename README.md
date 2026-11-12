@@ -2,7 +2,7 @@
 
 Control de la tarjeta BAM y de las cajas rurales Santa Sofía y San Rafael.
 
-- **César** entra con su usuario de Cobros (`cesar`): registra retiros y abonos, ve los registros por periodo o por fechas, saca PDF y administra los accesos.
+- **César** entra con su usuario de Cobros (`cesar`); la sesión queda abierta y pide la contraseña cada 30 días. Registra retiros y abonos (deslizar a la izquierda para eliminar), ve los registros por periodo o por fechas, saca PDF y administra los accesos.
 - **Encargadas** entran con el usuario y la contraseña que César les pone en Ajustes. Solo ven su caja, sin poder cambiar nada. Su sesión dura 30 días.
 
 ## Archivos

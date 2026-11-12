@@ -65,6 +65,11 @@ h1.m{font-size:22px}
 .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .lista{border-top:1px solid var(--line2)}
 .mov{width:100%;display:flex;align-items:center;gap:10px;padding:12px 16px;border:0;border-bottom:1px solid var(--line2);background:transparent;text-align:left}
+.desliza{position:relative;overflow:hidden}
+.desliza .mov{position:relative;background:var(--bg);touch-action:pan-y;transition:transform .2s ease}
+.desliza.mueve .mov{transition:none}
+.borrar{position:absolute;top:0;right:0;bottom:1px;width:96px;border:0;background:#C93B4A;color:#fff;font-size:13px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.borrar svg{width:20px;height:20px}
 button.mov:active{background:#171A36}
 .ic{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .ic svg{width:18px;height:18px}
@@ -179,7 +184,7 @@ button.mov:active{background:#171A36}
 <script>
 // ===== Cajas Rurales =====
 // Cambiar VERSION cada vez que se publique: los teléfonos se actualizan solos.
-const VERSION='2026-11-12.1';
+const VERSION='2026-11-12.2';
 // Mismo proyecto de Supabase que Cobros (tablas aparte, cr_*). La clave pública no es secreta:
 // lo que protege los datos son las reglas de supabase/cajas_rurales.sql.
 const SB_URL='https://shlolncjhfzqmcllwjrk.supabase.co';
@@ -189,9 +194,10 @@ const ADMIN='cesar';
 const K_TOKEN='cr_token_encargada';
 const PDF_LIB='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 
-// César: la sesión vive mientras la app está abierta (igual que Cobros).
-let almSes=null;try{almSes=window.sessionStorage;}catch(e){}
-const sb=supabase.createClient(SB_URL,SB_KEY,{auth:Object.assign({storageKey:'cr-sesion-admin',persistSession:true,autoRefreshToken:true},almSes?{storage:almSes}:{})});
+// César: la sesión queda guardada en este teléfono y pide la contraseña otra vez cada 30 días.
+const K_ADMIN_DESDE='cr_admin_desde';
+const DIAS_SESION=30;
+const sb=supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:'cr-sesion-admin',persistSession:true,autoRefreshToken:true}});
 
 const N={bam:'Tarjeta BAM',ss:'Caja Santa Sofía',sr:'Caja San Rafael'};
 const NC={bam:'Tarjeta',ss:'Santa Sofía',sr:'San Rafael'};
@@ -211,6 +217,7 @@ const I={
   pdf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M12 12v6M9 15l3 3 3-3"/></svg>',
   candA:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.6-1.7"/></svg>',
   candC:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  basura:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
   banco:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l8 4H4l8-4ZM6 11v6M10 11v6M14 11v6M18 11v6M4 20h16"/></svg>'
 };
 
@@ -297,11 +304,13 @@ function fila(m,f,conFecha){
 }
 function filaHTML(f,tap){
   const tag=tap?'button':'div';
-  return `<${tag} class="mov"${tap?` data-a="det" data-v="${esc(f.id)}"`:''}>
+  const fila=`<${tag} class="mov"${tap?` data-a="det" data-v="${esc(f.id)}"`:''}>
 <span class="ic ${f.r?'r':'a'}">${I.flecha}</span>
 <span class="mt"><span class="t">${esc(f.titulo)}</span><span class="s">${esc(f.sub)}</span></span>
 <span class="mm"><span class="m ${f.r?'r':'a'} num">${f.monto}</span><span class="s num">${esc(f.saldo)}</span></span>
 </${tag}>`;
+  if(!tap)return fila;
+  return `<div class="desliza"><button class="borrar" data-a="borrarRapido" data-v="${esc(f.id)}" tabindex="-1">${I.basura}Eliminar</button>${fila}</div>`;
 }
 
 // ===== Datos (César) =====
@@ -375,7 +384,16 @@ async function iniciar(){
   }
   let ses=null;
   try{const g=await sb.auth.getSession();ses=g.data&&g.data.session;}catch(e){}
-  if(ses){await entrarAdmin(ses.user);return;}
+  if(ses){
+    let desde=0;try{desde=+localStorage.getItem(K_ADMIN_DESDE)||0;}catch(e){}
+    if(!desde){desde=Date.now();try{localStorage.setItem(K_ADMIN_DESDE,String(desde));}catch(e){}}
+    if(Date.now()-desde>DIAS_SESION*86400000){
+      try{await sb.auth.signOut();}catch(e){}
+      try{localStorage.removeItem(K_ADMIN_DESDE);}catch(e){}
+      S.loginErr='Por seguridad, vuelve a escribir tu contraseña (cada 30 días).';S.pantalla='login';render();return;
+    }
+    await entrarAdmin(ses.user);return;
+  }
   S.pantalla='login';render();
 }
 async function entrar(){
@@ -393,6 +411,7 @@ async function entrar(){
       const m=String((res.error&&res.error.message)||'');
       fin(/fetch|network|Failed/i.test(m)?'No se pudo conectar. Revisa tu internet.':'Usuario o contraseña incorrectos.');return;
     }
+    try{localStorage.setItem(K_ADMIN_DESDE,String(Date.now()));}catch(e){}
     S.loginErr='';await entrarAdmin(res.data.user);return;
   }
   let r;
@@ -412,6 +431,7 @@ async function salirEnc(){
 }
 async function salirAdmin(){
   try{await sb.auth.signOut();}catch(e){}
+  try{localStorage.removeItem(K_ADMIN_DESDE);}catch(e){}
   location.reload();
 }
 
@@ -640,9 +660,9 @@ function detHTML(){
 <span class="asa" aria-hidden="true"></span>
 <div class="secH" style="align-items:center"><h2 style="font-size:18px;margin:0">${esc(tituloDe(m))}</h2><span class="${r?'rojo':'verde'} num" style="font-size:20px;font-weight:800">${r?'−':'+'}Q ${fmt(m.monto)}</span></div>
 <dl>${filas.map(f=>`<dt>${esc(f[0])}</dt><dd class="num">${esc(f[1])}</dd>`).join('')}</dl>
-${S.det.confirmar?`<p style="margin:0;font-size:14px;font-weight:700;line-height:1.45">¿Anular este movimiento? Deja de contar y los saldos se recalculan. No se puede deshacer.</p>
-<div class="fila2"><button class="btnSec" data-a="detNo">Cancelar</button><button class="btnPri" style="background:var(--rojo)" data-a="detAnular"${S.det.anulando?' disabled':''}>${S.det.anulando?'Anulando…':'Sí, anular'}</button></div>`
-:`<button class="btnPeligro" data-a="detConfirmar">Anular movimiento</button>`}
+${S.det.confirmar?`<p style="margin:0;font-size:14px;font-weight:700;line-height:1.45">¿Eliminar este movimiento? Deja de contar y los saldos se recalculan. No se puede deshacer.</p>
+<div class="fila2"><button class="btnSec" data-a="detNo">Cancelar</button><button class="btnPri" style="background:var(--rojo)" data-a="detAnular"${S.det.anulando?' disabled':''}>${S.det.anulando?'Eliminando…':'Sí, eliminar'}</button></div>`
+:`<button class="btnPeligro" data-a="detConfirmar">Eliminar movimiento</button>`}
 </div></div>`;
 }
 
@@ -705,6 +725,41 @@ function toast(t){
   clearTimeout(_toastT);_toastT=setTimeout(()=>{el.style.display='none';},2600);
 }
 
+// ===== Deslizar a la izquierda para eliminar =====
+const ANCHO_BORRAR=96;
+let _dz=null,_dzAbierto=null,_dzRecien=0;
+function cerrarDeslizes(excepto){
+  document.querySelectorAll('.desliza').forEach(d=>{if(d!==excepto){const m=d.querySelector('.mov');if(m)m.style.transform='';d.classList.remove('abierto');}});
+  if(!excepto)_dzAbierto=null;
+}
+document.addEventListener('pointerdown',e=>{
+  const d=e.target.closest('.desliza');
+  if(!d||e.target.closest('.borrar')){if(_dzAbierto&&!e.target.closest('.borrar')){cerrarDeslizes();_dzRecien=Date.now();}return;}
+  if(_dzAbierto&&_dzAbierto!==d){cerrarDeslizes();_dzRecien=Date.now();return;}
+  _dz={d:d,m:d.querySelector('.mov'),x:e.clientX,y:e.clientY,base:d.classList.contains('abierto')?-ANCHO_BORRAR:0,dx:0,horiz:null};
+},{passive:true});
+document.addEventListener('pointermove',e=>{
+  if(!_dz)return;
+  const dx=e.clientX-_dz.x,dy=e.clientY-_dz.y;
+  if(_dz.horiz===null){if(Math.abs(dx)<8&&Math.abs(dy)<8)return;_dz.horiz=Math.abs(dx)>Math.abs(dy);if(_dz.horiz)_dz.d.classList.add('mueve');}
+  if(!_dz.horiz)return;
+  _dz.dx=dx;
+  const x=Math.max(-ANCHO_BORRAR-24,Math.min(0,_dz.base+dx));
+  _dz.m.style.transform='translateX('+x+'px)';
+},{passive:true});
+function soltarDesliz(){
+  if(!_dz)return;
+  const z=_dz;_dz=null;
+  z.d.classList.remove('mueve');
+  if(!z.horiz)return;
+  _dzRecien=Date.now();
+  const fin=z.base+z.dx;
+  if(fin<-ANCHO_BORRAR/2){z.m.style.transform='translateX(-'+ANCHO_BORRAR+'px)';z.d.classList.add('abierto');_dzAbierto=z.d;}
+  else{z.m.style.transform='';z.d.classList.remove('abierto');if(_dzAbierto===z.d)_dzAbierto=null;}
+}
+document.addEventListener('pointerup',soltarDesliz,{passive:true});
+document.addEventListener('pointercancel',soltarDesliz,{passive:true});
+
 // ===== Acciones =====
 const A={
   ir:v=>ir(v),
@@ -724,6 +779,7 @@ const A={
   det:v=>{S.det={id:v,confirmar:false};render();},
   detCerrar:()=>{if(S.det&&S.det.anulando)return;S.det=null;render();},
   detConfirmar:()=>{S.det.confirmar=true;render();},
+  borrarRapido:v=>{cerrarDeslizes();S.det={id:v,confirmar:true};render();},
   detNo:()=>{S.det.confirmar=false;render();},
   detAnular:()=>anularMov(),
   encMas:()=>{S.encVer+=30;render();},
@@ -739,6 +795,9 @@ const A={
 };
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-a]');if(!t)return;
+  // Un toque justo después de deslizar (o para cerrar un renglón abierto) no abre el detalle
+  if(t.dataset.a==='det'&&Date.now()-_dzRecien<200){e.preventDefault();return;}
+  if(t.dataset.a==='det'&&t.closest('.desliza.abierto')){e.preventDefault();cerrarDeslizes();return;}
   // Toques dentro de la hoja de detalle no la cierran
   if(t.dataset.a==='detCerrar'&&e.target.closest('[data-stop]'))return;
   const f=A[t.dataset.a];if(!f)return;
@@ -764,8 +823,8 @@ async function anularMov(){
   const d=S.det;if(!d||d.anulando)return;
   d.anulando=true;render();
   let r;try{r=await sb.from('cr_movimientos').update({anulado:true,anulado_en:new Date().toISOString()}).eq('id',d.id);}catch(e){r={error:e};}
-  if(r.error){d.anulando=false;render();toast('No se pudo anular. Revisa tu internet.');return;}
-  S.det=null;await recargar();render();toast('Movimiento anulado');
+  if(r.error){d.anulando=false;render();toast('No se pudo eliminar. Revisa tu internet.');return;}
+  S.det=null;await recargar();render();toast('Movimiento eliminado');
 }
 async function guardarAcceso(k){
   const a=S.accesos[k];

@@ -99,6 +99,27 @@ const ok=(t,c)=>{n++;if(c)console.log('  ✓ '+t);else{fallos++;console.log('  �
   ok('Anulado: la tarjeta vuelve a −448,500',(await txt('.tarjeta .big'))==='−Q 448,500.00'&&(await filas())===4);
   ok('En la nube queda anulado, no borrado',(await nube(()=>__nube.leer().movs.filter(m=>m.anulado).length))===1);
 
+  console.log('Deslizar para eliminar');
+  const deslizar=async(sel,dx)=>{const b=await p.$eval(sel,e=>{const r=e.getBoundingClientRect();return {x:r.x+r.width-40,y:r.y+r.height/2};});
+    await p.mouse.move(b.x,b.y);await p.mouse.down();for(let i=1;i<=8;i++)await p.mouse.move(b.x+dx*i/8,b.y+1);await p.mouse.up();await p.waitForTimeout(300);};
+  await deslizar('.lista .desliza:nth-child(1) .mov',-150);
+  ok('Deslizar a la izquierda muestra "Eliminar"',!!(await p.$('.desliza.abierto'))&&!(await p.$('.det')));
+  await clic('.lista .desliza:nth-child(1) .mov');
+  ok('Tocar el renglón abierto lo cierra sin abrir el detalle',!(await p.$('.desliza.abierto'))&&!(await p.$('.det')));
+  await deslizar('.lista .desliza:nth-child(1) .mov',-30);
+  ok('Deslizar poquito no lo abre',!(await p.$('.desliza.abierto')));
+  await deslizar('.lista .desliza:nth-child(1) .mov',-150);
+  const tituloAntes=await txt('.lista .desliza:nth-child(1) .mov .t');
+  await clic('.desliza.abierto .borrar');
+  ok('Eliminar pide confirmar',(await txt('.det')).includes('¿Eliminar este movimiento?'));
+  await clic('[data-a="detNo"]');await clic('[data-a="detCerrar"]');
+  ok('Cancelar no borra nada',(await filas())===4);
+  await deslizar('.lista .desliza:nth-child(1) .mov',-150);await clic('.desliza.abierto .borrar');
+  await clic('[data-a="detAnular"]');await p.waitForTimeout(300);
+  ok('Confirmado: se elimina ('+tituloAntes+' +24,000) y la tarjeta vuelve a −472,500',(await filas())===3&&(await txt('.tarjeta .big'))==='−Q 472,500.00');
+  await nube(()=>{const db=__nube.leer();db.movs.forEach(m=>{if(m.monto===24000)m.anulado=false;});__nube.guardar(db);});
+  await p.reload();await p.waitForTimeout(400);
+
   console.log('Registros y periodos');
   await nube(()=>{const db=__nube.leer();const d=(dias,h)=>{const x=new Date();x.setDate(x.getDate()-dias);x.setHours(h,15,0,0);return x.toISOString();};
     for(let i=0;i<22;i++)db.movs.push({id:'v'+i,fecha:d(2+i%3,9),creado_en:d(2+i%3,9),tipo:'abono',cuenta:'sr',monto:100,afecta_tarjeta:false,anulado:false});
@@ -107,6 +128,7 @@ const ok=(t,c)=>{n++;if(c)console.log('  ✓ '+t);else{fallos++;console.log('  �
     __nube.guardar(db);});
   await p.reload();await p.waitForTimeout(400);
   ok('Al recargar sigue dentro (sesión abierta)',(await txt('h1'))==='Panel');
+  ok('Guarda la fecha de entrada para pedir contraseña en 30 días',!!(await p.evaluate(()=>localStorage.getItem('cr_admin_desde'))));
   ok('Panel muestra 20 y "Mostrar más"',(await filas())===20&&(await txt('.btnSec')).startsWith('Mostrar más'));
   ok('Saldos ya incluyen lo agregado',(await txt('[data-v="sr"].caja .v'))==='−Q 4,800.00');
   await clic('.btnSec');
@@ -174,6 +196,13 @@ const ok=(t,c)=>{n++;if(c)console.log('  ✓ '+t);else{fallos++;console.log('  �
   await nube(()=>{const db=__nube.leer();db.accesos[0].activo=false;db.sesionesEnc=[];__nube.guardar(db);});
   await p.reload();await p.waitForTimeout(300);
   ok('Si César la desactiva, se cierra y avisa',(await p.isVisible('#lgForm'))&&(await txt('#lgErr'))==='Tu sesión terminó. Vuelve a entrar.');
+
+  console.log('Sesión de César: 30 días');
+  await p.fill('#lgU','cesar');await p.fill('#lgP','ClaveCesar1');await clic('#lgBtn');await p.waitForTimeout(300);
+  await p.evaluate(()=>localStorage.setItem('cr_admin_desde',String(Date.now()-29*86400000)));await p.reload();await p.waitForTimeout(300);
+  ok('A los 29 días sigue dentro',(await txt('h1'))==='Panel');
+  await p.evaluate(()=>localStorage.setItem('cr_admin_desde',String(Date.now()-31*86400000)));await p.reload();await p.waitForTimeout(300);
+  ok('A los 31 días pide la contraseña otra vez',(await p.isVisible('#lgForm'))&&(await txt('#lgErr')).startsWith('Por seguridad'));
 
   console.log('Sin conexión');
   await p.fill('#lgU','cesar');await p.fill('#lgP','ClaveCesar1');await clic('#lgBtn');await p.waitForTimeout(300);

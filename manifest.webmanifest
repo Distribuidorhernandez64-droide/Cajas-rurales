@@ -1,0 +1,15 @@
+{
+  "name": "Cajas Rurales",
+  "short_name": "Cajas",
+  "description": "Control de la tarjeta BAM y las cajas rurales Santa Sofía y San Rafael",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#12142B",
+  "theme_color": "#12142B",
+  "lang": "es-GT",
+  "icons": [
+    { "src": "icono-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

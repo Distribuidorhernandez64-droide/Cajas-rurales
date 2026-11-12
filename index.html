@@ -27,7 +27,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:Manrope,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 button,input{font:inherit;color:inherit}
-button{cursor:pointer}
+button{cursor:pointer;touch-action:manipulation}
 button:disabled{cursor:default}
 :focus-visible{outline:2px solid var(--amarillo);outline-offset:2px}
 .num{font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -184,7 +184,7 @@ button.mov:active{background:#171A36}
 <script>
 // ===== Cajas Rurales =====
 // Cambiar VERSION cada vez que se publique: los teléfonos se actualizan solos.
-const VERSION='2026-11-12.2';
+const VERSION='2026-11-12.3';
 // Mismo proyecto de Supabase que Cobros (tablas aparte, cr_*). La clave pública no es secreta:
 // lo que protege los datos son las reglas de supabase/cajas_rurales.sql.
 const SB_URL='https://shlolncjhfzqmcllwjrk.supabase.co';
@@ -203,6 +203,7 @@ const N={bam:'Tarjeta BAM',ss:'Caja Santa Sofía',sr:'Caja San Rafael'};
 const NC={bam:'Tarjeta',ss:'Santa Sofía',sr:'San Rafael'};
 const PUNTO={ss:'#B79CFF',sr:'#FF8FB1'};
 const DIAS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+const DIAS_C=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const PRESETS=[['7d','7 días'],['30d','30 días'],['12s','12 sem.'],['6m','6 meses'],['1a','1 año']];
 
@@ -249,7 +250,7 @@ const hoyIso=()=>iso(new Date());
 const isoAFecha=s=>{const p=String(s).split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
 const isoTxt=s=>{const d=isoAFecha(s);return d.getDate()+' '+MESES[d.getMonth()].slice(0,3)+' '+d.getFullYear();};
 const horaDe=ts=>{const d=new Date(ts);return dos(d.getHours())+':'+dos(d.getMinutes());};
-const diaCorto=ts=>{const d=new Date(ts),h=new Date();return d.getDate()+' '+MESES[d.getMonth()].slice(0,3)+(d.getFullYear()!==h.getFullYear()?' '+d.getFullYear():'');};
+const diaCorto=ts=>{const d=new Date(ts),h=new Date();return DIAS_C[d.getDay()]+' '+d.getDate()+' '+MESES[d.getMonth()].slice(0,3)+(d.getFullYear()!==h.getFullYear()?' '+d.getFullYear():'');};
 const fechaLarga=()=>{const d=new Date();return DIAS[d.getDay()]+' '+d.getDate()+' de '+MESES[d.getMonth()];};
 function rangoDe(k){
   const h=new Date(),d=new Date(h.getFullYear(),h.getMonth(),h.getDate());
@@ -551,7 +552,7 @@ V.reg=()=>{
   let html='',dia='';
   d.lista.forEach(m=>{
     const dt=new Date(m.ts),k=dt.toDateString();
-    if(k!==dia){dia=k;html+=`<h2 class="diaH">${esc((dt.getDate()+' de '+MESES[dt.getMonth()]+(dt.getFullYear()!==new Date().getFullYear()?' '+dt.getFullYear():'')).toUpperCase())}</h2>`;}
+    if(k!==dia){dia=k;html+=`<h2 class="diaH">${esc((DIAS[dt.getDay()]+' '+dt.getDate()+' de '+MESES[dt.getMonth()]+(dt.getFullYear()!==new Date().getFullYear()?' '+dt.getFullYear():'')).toUpperCase())}</h2>`;}
     html+=filaHTML(fila(m,g.cuenta,false),true);
   });
   const hastaTxt=g.hasta===hoy?'Hoy':isoTxt(g.hasta);
@@ -652,7 +653,7 @@ ${fila('bam')}${fila('ss')}${fila('sr')}
 function detHTML(){
   const m=S.movs.find(x=>x.id===S.det.id);if(!m)return '';
   const r=m.tipo==='retiro',x=S.sal[m.id],d=new Date(m.ts);
-  const filas=[['Cuenta',N[m.cuenta]],['Fecha',d.getDate()+' de '+MESES[d.getMonth()]+' '+d.getFullYear()],['Hora',horaDe(m.ts)]];
+  const filas=[['Cuenta',N[m.cuenta]],['Fecha',DIAS[d.getDay()]+' '+d.getDate()+' de '+MESES[d.getMonth()]+' '+d.getFullYear()],['Hora',horaDe(m.ts)]];
   if(m.cuenta!=='bam'&&r)filas.push(['Afectó la tarjeta',m.afecta?'Sí':'No']);
   if(m.cuenta!=='bam')filas.push(['Saldo de la caja después',sal(x.caja)]);
   if(m.cuenta==='bam'||m.afecta)filas.push(['Saldo de la tarjeta después',sal(x.bam)]);
@@ -889,7 +890,7 @@ async function hacerPdf(){
       doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(78,84,112);doc.text(t[0].toUpperCase(),x+10,y+15);
       doc.setFontSize(12);doc.setTextColor(t[2][0],t[2][1],t[2][2]);doc.text(t[1],x+10,y+31);});
     y+=58;
-    const col=[{t:'Fecha',x:M},{t:'Hora',x:M+70},{t:'Movimiento',x:M+112},{t:'Cuenta',x:M+232},{t:'Monto',x:W-M-100,a:'right'},{t:'Saldo',x:W-M,a:'right'}];
+    const col=[{t:'Fecha',x:M},{t:'Hora',x:M+84},{t:'Movimiento',x:M+122},{t:'Cuenta',x:M+240},{t:'Monto',x:W-M-100,a:'right'},{t:'Saldo',x:W-M,a:'right'}];
     const encabezado=()=>{doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(78,84,112);
       col.forEach(c=>doc.text(c.t.toUpperCase(),c.x,y,c.a?{align:c.a}:undefined));y+=6;doc.setDrawColor(21,24,43);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;};
     encabezado();
@@ -901,10 +902,10 @@ async function hacerPdf(){
       const saldo=g.cuenta==='bam'?x.bam:g.cuenta==='todo'?(m.cuenta!=='bam'?x.caja:x.bam):x.caja;
       doc.setFont('helvetica','normal');doc.setTextColor(21,24,43);
       const dt=new Date(m.ts);
-      doc.text(dt.getDate()+' '+MESES[dt.getMonth()].slice(0,3)+' '+dt.getFullYear(),M,y);
-      doc.text(horaDe(m.ts),M+70,y);
-      doc.text(tituloDe(m).replace(' · ',' '),M+112,y);
-      doc.text(NC[m.cuenta],M+232,y);
+      doc.text(DIAS_C[dt.getDay()]+' '+dt.getDate()+' '+MESES[dt.getMonth()].slice(0,3)+' '+dt.getFullYear(),M,y);
+      doc.text(horaDe(m.ts),M+84,y);
+      doc.text(tituloDe(m).replace(' · ',' '),M+122,y);
+      doc.text(NC[m.cuenta],M+240,y);
       doc.setFont('helvetica','bold');doc.setTextColor(r?180:6,r?35:118,r?24:71);
       doc.text((r?'-':'+')+fmt(m.monto),W-M-100,y,{align:'right'});
       doc.setTextColor(21,24,43);doc.text(p$(saldo),W-M,y,{align:'right'});

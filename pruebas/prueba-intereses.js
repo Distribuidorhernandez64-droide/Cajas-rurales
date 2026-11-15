@@ -1,0 +1,50 @@
+// Prueba de intereses: repite el estado de cuenta BAM 9851 del 15/09/2026
+// (saldo anterior Q485,220.61, 106 movimientos, tasa 1.35% mensual). El banco cobró Q6,711.74.
+// Uso: python3 -m http.server 8123 &  node pruebas/prueba-intereses.js
+const fs=require('fs'),path=require('path');
+const {chromium}=require(process.env.PW||'playwright');
+const FAKE=fs.readFileSync(path.join(__dirname,'nube-falsa.js'),'utf8');
+const MOVS=JSON.parse(fs.readFileSync(process.env.MOVS||path.join(__dirname,'datos','bam-9851-sep2026.json'),'utf8'));
+const FOTOS=process.env.FOTOS||'/tmp/cr/fotos';fs.mkdirSync(FOTOS,{recursive:true});
+let fallos=0,n=0;const ok=(t,c)=>{n++;console.log((c?'  ✓ ':'  ✗ ')+t);if(!c)fallos++;};
+(async()=>{
+  const nav=await chromium.launch({executablePath:process.env.CHROME||undefined});
+  const ctx=await nav.newContext({viewport:{width:390,height:844},deviceScaleFactor:2});
+  await ctx.route('**/@supabase/supabase-js@*',r=>r.fulfill({status:200,contentType:'application/javascript',body:FAKE}));
+  await ctx.route('https://fonts.**',r=>r.abort());
+  const p=await ctx.newPage();const err=[];p.on('pageerror',e=>err.push(e.message));
+  const txt=async s=>(await p.textContent(s)||'').replace(/\s+/g,' ').trim();
+  await p.goto('http://localhost:8123/index.html');
+  await p.evaluate(MOVS=>{localStorage.clear();__nube.reiniciar();const db=__nube.leer();
+    db.sesion='cesar@cobros.local';
+    db.cuentas.forEach(c=>{c.configurada=true;});
+    const b=db.cuentas.find(c=>c.id==='bam');b.saldo_inicial=-485220.61;b.actualizado=new Date(2026,7,15,20,0).toISOString();
+    MOVS.forEach((m,i)=>{const [y,mo,d]=m[0].split('-').map(Number);const f=new Date(y,mo-1,d,9,0,i).toISOString();
+      db.movs.push({id:'s'+i,fecha:f,creado_en:f,tipo:m[1],cuenta:'bam',monto:m[2],afecta_tarjeta:true,anulado:false});});
+    __nube.guardar(db);localStorage.setItem('cr_admin_desde',String(Date.now()));localStorage.setItem('cr_tasa_mensual','1.35');},MOVS);
+  await p.reload();await p.waitForTimeout(500);
+  ok('Panel: fila de interés visible',await p.isVisible('.intRow'));
+  await p.screenshot({path:path.join(FOTOS,'i1-panel.png')});
+  await p.click('.intRow');await p.waitForTimeout(200);
+  ok('Abre Intereses',(await txt('h1'))==='Intereses');
+  await p.click('[data-a="intPer"][data-v="2026-09-15"]');await p.waitForTimeout(150);
+  const tot=await txt('.card .num');
+  ok('Corte 15 sep calculado Q 6,711.70 (banco Q 6,711.74): '+tot,tot==='Q 6,711.70');
+  ok('31 días en el corte',(await p.$$eval('.lista .mov',e=>e.length))===31);
+  ok('Primer día 16/08: saldo cierre −504,220.61',(await txt('.lista .mov:last-child .s'))==='Saldo −504,220.61');
+  await p.fill('#intBanco','6711.74');await p.dispatchEvent('#intBanco','input');await p.waitForTimeout(100);
+  ok('Diferencia: cuadra',(await txt('#intDif')).startsWith('Cuadra'));
+  await p.fill('#intBanco','6800');await p.dispatchEvent('#intBanco','input');
+  ok('Si el banco cobra de más, lo dice',(await txt('#intDif'))==='El banco cobró Q 88.30 de más');
+  await p.fill('#intBanco','6711.74');await p.dispatchEvent('#intBanco','input');
+  await p.reload();await p.waitForTimeout(400);await p.click('.intRow');await p.click('[data-a="intPer"][data-v="2026-09-15"]');await p.waitForTimeout(150);
+  ok('Lo que cobró el banco queda guardado',(await p.inputValue('#intBanco'))==='6,711.74');
+  await p.evaluate(()=>window.scrollTo(0,0));await p.screenshot({path:path.join(FOTOS,'i2-intereses.png')});
+  await p.fill('#intTasa','1.50');await p.dispatchEvent('#intTasa','change');await p.waitForTimeout(150);
+  ok('Cambiar la tasa recalcula (1.50% → Q 7,457.44)',(await txt('.card .num'))==='Q 7,457.44');
+  await p.click('[data-a="intPer"]');await p.waitForTimeout(150);
+  ok('Corte actual: Hoy arriba',(await txt('.lista .mov .t'))==='Hoy');
+  await p.screenshot({path:path.join(FOTOS,'i3-actual.png'),fullPage:true});
+  ok('Sin errores JS',err.length===0);if(err.length)console.log(err);
+  await nav.close();console.log(`\n${n-fallos}/${n} bien`);process.exit(fallos?1:0);
+})();

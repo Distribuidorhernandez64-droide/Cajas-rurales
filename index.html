@@ -50,6 +50,10 @@ h1.m{font-size:22px}
 .tarjeta .lbl{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--moradoTx)}
 .tarjeta .big{font-weight:800;letter-spacing:-.03em;line-height:1.15}
 .tarjeta .sub{font-size:13px;font-weight:600;color:var(--moradoTx)}
+.intRow{margin-top:-6px;height:44px;padding:0 6px 0 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;white-space:nowrap}
+.intRow b{font-weight:800;color:var(--ink)}
+.intRow svg{width:16px;height:16px;margin-left:auto;color:var(--mut)}
+.intSep{width:1px;height:16px;background:var(--line);margin:0 6px}
 .fila2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .caja{text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:6px;min-width:0}
 .caja.sel{border-color:var(--amarillo)}
@@ -184,7 +188,7 @@ button.mov:active{background:#171A36}
 <script>
 // ===== Cajas Rurales =====
 // Cambiar VERSION cada vez que se publique: los teléfonos se actualizan solos.
-const VERSION='2026-11-12.3';
+const VERSION='2026-11-15.1';
 // Mismo proyecto de Supabase que Cobros (tablas aparte, cr_*). La clave pública no es secreta:
 // lo que protege los datos son las reglas de supabase/cajas_rurales.sql.
 const SB_URL='https://shlolncjhfzqmcllwjrk.supabase.co';
@@ -314,11 +318,52 @@ function filaHTML(f,tap){
   return `<div class="desliza"><button class="borrar" data-a="borrarRapido" data-v="${esc(f.id)}" tabindex="-1">${I.basura}Eliminar</button>${fila}</div>`;
 }
 
+// ===== Intereses de la tarjeta =====
+// Igual que BAM (comprobado al centavo con los estados de sep y oct 2026): cada día se cobra
+// saldo con que cierra el día × tasa mensual ÷ 30. El retiro de hoy ya paga hoy; el abono de hoy ya baja hoy.
+const K_TASA='cr_tasa_mensual',K_CORTE='cr_dia_corte',K_BANCO='cr_int_banco';
+const lsGet=(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v;}catch(e){return d;}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}};
+function cfgInt(){
+  let t=parseFloat(lsGet(K_TASA,'1.50'));if(!(t>=0&&t<20))t=1.5;
+  let c=parseInt(lsGet(K_CORTE,'15'),10);if(!(c>=1&&c<=28))c=15;
+  return {tasa:t,corte:c,diaria:t/100/30};
+}
+function bancoGuardado(){try{return JSON.parse(lsGet(K_BANCO,'{}'))||{};}catch(e){return {};}}
+const masDias=(s,n)=>{const d=isoAFecha(s);d.setDate(d.getDate()+n);return iso(d);};
+const diaTxt=s=>{const d=isoAFecha(s);return DIAS_C[d.getDay()]+' '+d.getDate()+' '+MESES[d.getMonth()].slice(0,3);};
+const cortoTxt=s=>{const d=isoAFecha(s);return d.getDate()+' '+MESES[d.getMonth()].slice(0,3);};
+// Periodo de corte que contiene el día s: del (corte+1) del mes anterior al corte de este mes
+function periodoDe(s,C){
+  const d=isoAFecha(s);
+  const fin=d.getDate()<=C?new Date(d.getFullYear(),d.getMonth(),C):new Date(d.getFullYear(),d.getMonth()+1,C);
+  const ini=new Date(fin.getFullYear(),fin.getMonth()-1,C+1);
+  return {ini:iso(ini),fin:iso(fin)};
+}
+function intereses(){
+  const cf=cfgInt(),hoy=hoyIso();
+  const porDia={};let primero=null;
+  S.movs.forEach(m=>{const dl=delta(m,'bam');if(!dl)return;const k=iso(new Date(m.ts));porDia[k]=(porDia[k]||0)+dl;if(!primero||k<primero)primero=k;});
+  const desdeCta=S.cuentas.bam.desde?iso(new Date(S.cuentas.bam.desde)):null;
+  let inicio=[primero,desdeCta].filter(Boolean).sort()[0]||hoy;
+  if(inicio>hoy)inicio=hoy;
+  const dias=[];let run=S.cuentas.bam.inicial;
+  for(let k=inicio;k<=hoy;k=masDias(k,1)){
+    run+=porDia[k]||0;
+    dias.push({dia:k,saldo:run,int:Math.max(0,-run)*cf.diaria});
+  }
+  const per={};
+  dias.forEach(x=>{const p=periodoDe(x.dia,cf.corte);(per[p.fin]=per[p.fin]||{ini:p.ini,fin:p.fin,dias:[],total:0});per[p.fin].dias.push(x);per[p.fin].total+=x.int;});
+  const lista=Object.values(per).sort((a,b)=>a.fin<b.fin?1:-1);
+  lista.forEach(p=>{p.completo=p.dias[0].dia===p.ini&&p.dias[p.dias.length-1].dia===p.fin;p.cerrado=hoy>p.fin;});
+  return {cf,inicio,dias,periodos:lista,hoy:dias[dias.length-1]};
+}
+
 // ===== Datos (César) =====
 async function cargarAdmin(){
-  const c=await sb.from('cr_cuentas').select('id,saldo_inicial,configurada');
+  const c=await sb.from('cr_cuentas').select('id,saldo_inicial,configurada,actualizado');
   if(c.error)throw c.error;
-  const cu={};(c.data||[]).forEach(r=>{cu[r.id]={inicial:aCent(r.saldo_inicial),configurada:!!r.configurada};});
+  const cu={};(c.data||[]).forEach(r=>{cu[r.id]={inicial:aCent(r.saldo_inicial),configurada:!!r.configurada,desde:r.actualizado?Date.parse(r.actualizado):null};});
   if(!cu.bam||!cu.ss||!cu.sr)throw new Error('La base de datos de Cajas Rurales no está lista.');
   let todos=[],desde=0;const P=1000;
   for(;;){
@@ -441,6 +486,7 @@ function ir(p){
   if(p==='reg')abrirReg();
   else if(p==='ajustes')abrirAjustes();
   else if(p==='prev'){S.pantalla='prev';S.encVer=30;render();}
+  else if(p==='int'){S.intSel=null;S.pantalla='int';render();}
   else{S.pantalla=p;render();}
 }
 function abrirNuevo(){S.nuevo={tipo:'retiro',dest:null,monto:'',afecta:true,err:''};S.pantalla='nuevo';render();
@@ -488,6 +534,7 @@ V.panel=()=>{
 <header class="top"><div class="col" style="gap:2px"><span class="fecha">${fechaLarga()}</span><h1>Panel</h1></div>
 <div class="acts"><button class="ib" data-a="ir" data-v="prev" aria-label="Ver como encargada">${I.ojo}</button><button class="ib" data-a="ir" data-v="ajustes" aria-label="Ajustes">${I.ajustes}</button></div></header>
 <button class="tarjeta${S.filtro==='bam'?' sel':''}" data-a="filtroT" data-v="bam"><span class="lbl">Tarjeta BAM</span><span class="big num" style="font-size:${fsGrande(t)}">${t}</span><span class="sub">Saldo</span></button>
+${(()=>{const it=intereses(),p=it.periodos[0];return `<button class="intRow" data-a="ir" data-v="int"><span class="mut">Interés hoy</span><b class="num">Q ${fmt(Math.round(it.hoy.int))}</b><span class="intSep" aria-hidden="true"></span><span class="mut">Corte</span><b class="num">Q ${fmt(Math.round(p.total))}</b>${I.sig}</button>`;})()}
 <div class="col g8"><div class="secH"><h2>Cajas rurales</h2><span class="num">Total ${salQ(S.saldo.ss+S.saldo.sr)}</span></div>
 <div class="fila2">
 <button class="caja${S.filtro==='ss'?' sel':''}" data-a="filtroT" data-v="ss"><span class="n"><span class="punto" style="background:${PUNTO.ss}"></span>Santa Sofía</span><span class="v num" style="font-size:${fsCaja(ss)}">${ss}</span></button>
@@ -500,6 +547,44 @@ ${lista.length?`<div style="padding:14px 16px 0"><button class="btnSec" data-a="
 </section>
 <button class="fab" data-a="nuevo" aria-label="Registrar movimiento">${I.mas}</button>`;
 };
+
+V.int=()=>{
+  const it=intereses(),cf=it.cf,hoy=hoyIso();
+  const p=it.periodos.find(x=>x.fin===S.intSel)||it.periodos[0];
+  const banco=bancoGuardado()[p.fin];
+  const calc=Math.round(p.total);
+  const chip=x=>`<button class="chip${x.fin===p.fin?' on':''}" data-a="intPer" data-v="${x.fin}">Corte ${cortoTxt(x.fin)}</button>`;
+  const filas=p.dias.slice().reverse().map(x=>`<div class="mov"><span class="mt"><span class="t">${x.dia===hoy?'Hoy':esc(diaTxt(x.dia))}</span><span class="s num">Saldo ${sal(x.saldo)}</span></span><span class="mm"><span class="m num">${fmt(Math.round(x.int))}</span></span></div>`).join('');
+  let comp='';
+  if(p.cerrado&&p.completo){
+    const dif=banco!=null?banco-calc:null;
+    comp=`<div class="card"><label class="campo" style="border-top:0"><span style="width:118px">Cobró el banco</span><input id="intBanco" inputmode="decimal" placeholder="0.00" autocomplete="off" value="${banco!=null?esc(formatoMonto((banco/100).toFixed(2))):''}"></label>
+<div class="campo"><span style="width:118px">Diferencia</span><b id="intDif" class="num ${dif==null?'mut':Math.abs(dif)<=100?'verde':'rojo'}" style="flex:1;text-align:right;font-size:15px">${difTxt(dif)}</b></div></div>`;
+  }else if(p.cerrado){
+    comp=`<span class="s" style="font-size:13px;line-height:1.45">Este corte no está completo en la app (empieza el ${cortoTxt(it.inicio)}), así que no sirve para comparar con el banco.</span>`;
+  }
+  return `<section class="scr scroll" style="padding:calc(var(--top) + 18px) 0 calc(var(--bot) + 24px)">
+<div class="col g14" style="padding:0 20px 14px">
+<header class="topL"><button class="ib" data-a="ir" data-v="panel" aria-label="Volver">${I.atras}</button><h1 class="m">Intereses</h1></header>
+<div class="card" style="padding:16px 16px 14px;gap:4px">
+<span class="cap">${p.cerrado?'Cobro del corte':'Acumulado del corte'}</span>
+<span class="num" style="font-size:32px;font-weight:800;letter-spacing:-.03em">Q ${fmt(calc)}</span>
+<span class="s">${cortoTxt(p.ini)} – ${cortoTxt(p.fin)}${p.completo||p.dias[0].dia===p.ini?'':' · desde el '+cortoTxt(p.dias[0].dia)}</span>
+</div>
+<div class="resumen"><div><span class="cap" style="font-size:11.5px">Hoy</span><span class="v num">Q ${fmt(Math.round(it.hoy.int))}</span></div>
+<div><span class="cap" style="font-size:11.5px">Tasa</span><span class="v num">${cf.tasa.toFixed(2)}%<span class="s"> mensual</span></span></div></div>
+${it.periodos.length>1?`<nav class="chips" aria-label="Corte">${it.periodos.map(chip).join('')}</nav>`:''}
+${comp}
+</div>
+<div class="lista">${filas}</div>
+<div class="col g10" style="padding:18px 20px 0">
+<span class="s" style="font-size:12.5px;line-height:1.45">Cada día: saldo al cierre × ${cf.tasa.toFixed(2)}% ÷ 30 = ${(cf.tasa/30).toFixed(4).replace(/0+$/,'')}% diario. El retiro paga desde el mismo día y el abono baja el interés ese mismo día.</span>
+<div class="card"><label class="campo" style="border-top:0"><span>Tasa mensual</span><input id="intTasa" inputmode="decimal" value="${cf.tasa.toFixed(2)}" autocomplete="off"><b class="mut">%</b></label>
+<label class="campo"><span>Día de corte</span><input id="intCorte" inputmode="numeric" value="${cf.corte}" autocomplete="off"></label></div>
+</div>
+</section>`;
+};
+const difTxt=d=>d==null?'—':Math.abs(d)<=100?'Cuadra (Q '+fmt(d)+')':(d>0?'El banco cobró Q '+fmt(d)+' de más':'El banco cobró Q '+fmt(d)+' de menos');
 
 function calcNuevo(){
   const n=S.nuevo,c=montoACent(n.monto);
@@ -712,6 +797,22 @@ function despues(){
       if(inp.dataset.c==='usuario'&&inp.value!==a.usuario)inp.value=a.usuario;
     }));
   }
+  if(S.pantalla==='int'){
+    const b=document.getElementById('intBanco');
+    if(b)b.addEventListener('input',()=>{
+      const v=formatoMonto(b.value);b.value=v;
+      const it=intereses(),p=it.periodos.find(x=>x.fin===S.intSel)||it.periodos[0];
+      const g=bancoGuardado();if(v)g[p.fin]=montoACent(v);else delete g[p.fin];lsSet(K_BANCO,JSON.stringify(g));
+      const d=v?g[p.fin]-Math.round(p.total):null,el=document.getElementById('intDif');
+      el.textContent=difTxt(d);el.className='num '+(d==null?'mut':Math.abs(d)<=100?'verde':'rojo');
+    });
+    const t=document.getElementById('intTasa');
+    t.addEventListener('input',()=>{t.value=String(t.value).replace(/[^0-9.]/g,'').replace(/(\..*)\./g,'$1').slice(0,5);});
+    t.addEventListener('change',()=>{const n=parseFloat(t.value);if(n>=0&&n<20)lsSet(K_TASA,n.toFixed(2));setTimeout(render,0);});
+    const c=document.getElementById('intCorte');
+    c.addEventListener('input',()=>{c.value=String(c.value).replace(/\D/g,'').slice(0,2);});
+    c.addEventListener('change',()=>{const n=parseInt(c.value,10);if(n>=1&&n<=28)lsSet(K_CORTE,String(n));setTimeout(render,0);});
+  }
   if(S.pantalla==='saldos'){
     document.querySelectorAll('[data-sal]').forEach(inp=>inp.addEventListener('input',()=>{
       const v=formatoMonto(inp.value);inp.value=v;S.saldosEd[inp.dataset.sal].txt=v;
@@ -785,6 +886,7 @@ const A={
   detAnular:()=>anularMov(),
   encMas:()=>{S.encVer+=30;render();},
   prevCaja:v=>{S.prevCaja=v;render();},
+  intPer:v=>{S.intSel=v;render();},
   accActivo:v=>{const a=S.accesos[v];a.activo=!a.activo;render();},
   accGuardar:v=>guardarAcceso(v),
   copiarLink:async()=>{const l=location.origin+location.pathname.replace(/index\.html$/,'');try{await navigator.clipboard.writeText(l);toast('Link copiado');}catch(e){toast('No se pudo copiar');}},
@@ -932,14 +1034,14 @@ async function versionPublicada(){
 }
 async function revisarVersion(){
   const v=await versionPublicada();
-  if(v&&v!==VERSION&&!['nuevo','saldos','ajustes'].includes(S.pantalla)&&!S.det)location.replace(location.pathname+'?v='+encodeURIComponent(v));
+  if(v&&v!==VERSION&&!['nuevo','saldos','ajustes','int'].includes(S.pantalla)&&!S.det)location.replace(location.pathname+'?v='+encodeURIComponent(v));
 }
 document.addEventListener('visibilitychange',async()=>{
   if(document.visibilityState!=='visible')return;
   revisarVersion();
   if(S.modo==='enc'&&S.pantalla==='enc'){const tok=tokenGuardado();if(!tok)return;
     const r=await cargarEnc(tok);if(r===false){S.modo=null;S.loginErr='Tu sesión terminó. Vuelve a entrar.';S.pantalla='login';}render();}
-  if(S.modo==='admin'&&(S.pantalla==='panel'||S.pantalla==='reg'||S.pantalla==='prev')&&!S.det){if(await recargar())render();}
+  if(S.modo==='admin'&&(S.pantalla==='panel'||S.pantalla==='reg'||S.pantalla==='prev'||S.pantalla==='int')&&!S.det){if(await recargar())render();}
 });
 
 iniciar();

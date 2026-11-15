@@ -3,7 +3,7 @@
 Control de la tarjeta BAM y de las cajas rurales Santa Sofía y San Rafael.
 
 - **César** entra con su usuario de Cobros (`cesar`); la sesión queda abierta y pide la contraseña cada 30 días. Registra retiros y abonos (deslizar a la izquierda para eliminar), ve los registros por periodo o por fechas, saca PDF y administra los accesos.
-- **Intereses de la tarjeta**: debajo del saldo de la tarjeta se ve el interés de hoy y el acumulado del corte; al tocarlo, el detalle día por día y dónde escribir lo que cobró el banco para comparar. Fórmula de BAM (comprobada con los estados de sep y oct 2026): saldo al cierre de cada día × tasa mensual ÷ 30. La tasa y el día de corte se cambian ahí mismo (se guardan en el teléfono).
+- **Intereses de la tarjeta**: debajo del saldo de la tarjeta hay un botón discreto "Intereses" (sin cifras); al tocarlo se ve el interés de hoy, el acumulado del corte, el detalle día por día y dónde escribir lo que cobró el banco para comparar. Fórmula de BAM (comprobada con los estados de sep y oct 2026): saldo al cierre de cada día × tasa mensual ÷ 30. La tasa y el día de corte se cambian ahí mismo (se guardan en el teléfono).
 - **Encargadas** entran con el usuario y la contraseña que César les pone en Ajustes. Solo ven su caja, sin poder cambiar nada. Su sesión dura 30 días.
 
 ## Archivos

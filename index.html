@@ -188,7 +188,7 @@ button.mov:active{background:#171A36}
 <script>
 // ===== Cajas Rurales =====
 // Cambiar VERSION cada vez que se publique: los teléfonos se actualizan solos.
-const VERSION='2026-11-15.1';
+const VERSION='2026-11-15.2';
 // Mismo proyecto de Supabase que Cobros (tablas aparte, cr_*). La clave pública no es secreta:
 // lo que protege los datos son las reglas de supabase/cajas_rurales.sql.
 const SB_URL='https://shlolncjhfzqmcllwjrk.supabase.co';
@@ -534,7 +534,7 @@ V.panel=()=>{
 <header class="top"><div class="col" style="gap:2px"><span class="fecha">${fechaLarga()}</span><h1>Panel</h1></div>
 <div class="acts"><button class="ib" data-a="ir" data-v="prev" aria-label="Ver como encargada">${I.ojo}</button><button class="ib" data-a="ir" data-v="ajustes" aria-label="Ajustes">${I.ajustes}</button></div></header>
 <button class="tarjeta${S.filtro==='bam'?' sel':''}" data-a="filtroT" data-v="bam"><span class="lbl">Tarjeta BAM</span><span class="big num" style="font-size:${fsGrande(t)}">${t}</span><span class="sub">Saldo</span></button>
-${(()=>{const it=intereses(),p=it.periodos[0];return `<button class="intRow" data-a="ir" data-v="int"><span class="mut">Interés hoy</span><b class="num">Q ${fmt(Math.round(it.hoy.int))}</b><span class="intSep" aria-hidden="true"></span><span class="mut">Corte</span><b class="num">Q ${fmt(Math.round(p.total))}</b>${I.sig}</button>`;})()}
+<button class="intRow" data-a="ir" data-v="int"><span class="mut">Intereses</span>${I.sig}</button>
 <div class="col g8"><div class="secH"><h2>Cajas rurales</h2><span class="num">Total ${salQ(S.saldo.ss+S.saldo.sr)}</span></div>
 <div class="fila2">
 <button class="caja${S.filtro==='ss'?' sel':''}" data-a="filtroT" data-v="ss"><span class="n"><span class="punto" style="background:${PUNTO.ss}"></span>Santa Sofía</span><span class="v num" style="font-size:${fsCaja(ss)}">${ss}</span></button>

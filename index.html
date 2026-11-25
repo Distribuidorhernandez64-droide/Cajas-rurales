@@ -120,6 +120,10 @@ button.mov:active{background:#171A36}
 .resumen div{display:flex;flex-direction:column;gap:3px;padding:12px 14px;min-width:0}
 .resumen div+div{border-left:1px solid var(--line)}
 .resumen .v{font-size:17px;font-weight:800}
+.sepDia{display:flex;align-items:center;gap:8px;padding:14px 16px 6px;font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line2)}
+.sepDia i{width:6px;height:6px;border-radius:3px;background:var(--amarillo)}
+.sepDia.ayer i{background:var(--mut)}
+.hueco{height:12px;background:#0C0E22;border-bottom:1px solid var(--line2)}
 .diaH{margin:0;padding:14px 20px 8px;font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--mut);border-bottom:1px solid var(--line2);position:sticky;top:0;background:var(--bg)}
 .hoja{flex-shrink:0;background:var(--card);border-top:1px solid var(--line);border-radius:24px 24px 0 0;padding:8px 0 calc(var(--bot) + 18px);display:flex;flex-direction:column;gap:12px}
 .asa{align-self:center;width:40px;height:5px;border-radius:3px;background:var(--chip)}
@@ -188,7 +192,7 @@ button.mov:active{background:#171A36}
 <script>
 // ===== Cajas Rurales =====
 // Cambiar VERSION cada vez que se publique: los teléfonos se actualizan solos.
-const VERSION='2026-11-15.2';
+const VERSION='2026-11-24.1';
 // Mismo proyecto de Supabase que Cobros (tablas aparte, cr_*). La clave pública no es secreta:
 // lo que protege los datos son las reglas de supabase/cajas_rurales.sql.
 const SB_URL='https://shlolncjhfzqmcllwjrk.supabase.co';
@@ -306,6 +310,24 @@ function fila(m,f,conFecha){
   else if(f==='todo')saldo=enCaja?'Caja '+sal(x.caja):'Tarjeta '+sal(x.bam);
   else saldo='Saldo '+sal(x.caja);
   return {id:m.id,r:r,titulo:tituloDe(m),sub:NC[m.cuenta]+' · '+(conFecha?diaCorto(m.ts)+' ':'')+horaDe(m.ts),monto:(r?'−':'+')+fmt(m.monto),saldo:saldo};
+}
+// Agrupa por día: etiqueta "Hoy" y "Ayer"; entre los demás días solo un pequeño espacio
+function claveDia(ts){const d=new Date(ts);return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();}
+function porDia(items,tsDe,filaDe){
+  const h=new Date(),ay=new Date(h.getFullYear(),h.getMonth(),h.getDate()-1);
+  const kHoy=claveDia(h.getTime()),kAyer=claveDia(ay.getTime());
+  let out='',prev=null;
+  items.forEach(it=>{
+    const k=claveDia(tsDe(it));
+    if(k!==prev){
+      if(k===kHoy)out+=`<div class="sepDia" role="heading" aria-level="3"><i aria-hidden="true"></i>Hoy</div>`;
+      else if(k===kAyer)out+=`<div class="sepDia ayer" role="heading" aria-level="3"><i aria-hidden="true"></i>Ayer</div>`;
+      else if(prev!==null)out+=`<div class="hueco" aria-hidden="true"></div>`;
+      prev=k;
+    }
+    out+=filaDe(it);
+  });
+  return out;
 }
 function filaHTML(f,tap){
   const tag=tap?'button':'div';
@@ -526,7 +548,7 @@ V.login=()=>`<section class="scr scroll pad"><form class="col g14" id="lgForm" s
 
 V.panel=()=>{
   const lista=S.orden.filter(m=>coincide(m,S.filtro));
-  const filas=lista.slice(0,20).map(m=>filaHTML(fila(m,S.filtro,true),true)).join('');
+  const filas=porDia(lista.slice(0,20),m=>m.ts,m=>filaHTML(fila(m,S.filtro,true),true));
   const t=salQ(S.saldo.bam),ss=salQ(S.saldo.ss),sr=salQ(S.saldo.sr);
   const chip=(f,n)=>`<button class="chip${S.filtro===f?' on':''}" data-a="filtro" data-v="${f}">${n}</button>`;
   return `<section class="scr scroll" style="padding:calc(var(--top) + 18px) 0 calc(var(--bot) + 110px)">
@@ -637,7 +659,7 @@ V.reg=()=>{
   let html='',dia='';
   d.lista.forEach(m=>{
     const dt=new Date(m.ts),k=dt.toDateString();
-    if(k!==dia){dia=k;html+=`<h2 class="diaH">${esc((DIAS[dt.getDay()]+' '+dt.getDate()+' de '+MESES[dt.getMonth()]+(dt.getFullYear()!==new Date().getFullYear()?' '+dt.getFullYear():'')).toUpperCase())}</h2>`;}
+    if(k!==dia){dia=k;const cd=claveDia(m.ts),hh=new Date(),pre=cd===claveDia(hh.getTime())?'Hoy · ':cd===claveDia(new Date(hh.getFullYear(),hh.getMonth(),hh.getDate()-1).getTime())?'Ayer · ':'';html+=`<h2 class="diaH">${esc((pre+DIAS[dt.getDay()]+' '+dt.getDate()+' de '+MESES[dt.getMonth()]+(dt.getFullYear()!==new Date().getFullYear()?' '+dt.getFullYear():'')).toUpperCase())}</h2>`;}
     html+=filaHTML(fila(m,g.cuenta,false),true);
   });
   const hastaTxt=g.hasta===hoy?'Hoy':isoTxt(g.hasta);
@@ -663,10 +685,10 @@ V.reg=()=>{
 };
 
 function encHTML(e,preview){
-  const filas=e.movs.slice(0,S.encVer).map(m=>{
+  const filas=porDia(e.movs.slice(0,S.encVer),m=>m.ts,m=>{
     const r=m.tipo==='retiro';
     return filaHTML({r:r,titulo:r?'Retiro':'Abono',sub:diaCorto(m.ts)+' '+horaDe(m.ts),monto:(r?'−':'+')+fmt(m.monto),saldo:'Saldo '+sal(m.saldo)},false);
-  }).join('');
+  });
   const t=salQ(e.saldo);
   return `<section class="scr scroll" style="padding:calc(var(--top) + 18px) 0 calc(var(--bot) + 24px)">
 <div class="col g14" style="padding:0 20px 14px">

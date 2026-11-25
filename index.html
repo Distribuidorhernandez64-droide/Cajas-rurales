@@ -123,6 +123,7 @@ button.mov:active{background:#171A36}
 .sepDia{display:flex;align-items:center;gap:8px;padding:14px 16px 6px;font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line2)}
 .sepDia i{width:6px;height:6px;border-radius:3px;background:var(--amarillo)}
 .sepDia.ayer i{background:var(--mut)}
+.sepDia.otro{padding-left:16px}
 .hueco{height:12px;background:#0C0E22;border-bottom:1px solid var(--line2)}
 .diaH{margin:0;padding:14px 20px 8px;font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--mut);border-bottom:1px solid var(--line2);position:sticky;top:0;background:var(--bg)}
 .hoja{flex-shrink:0;background:var(--card);border-top:1px solid var(--line);border-radius:24px 24px 0 0;padding:8px 0 calc(var(--bot) + 18px);display:flex;flex-direction:column;gap:12px}
@@ -192,7 +193,7 @@ button.mov:active{background:#171A36}
 <script>
 // ===== Cajas Rurales =====
 // Cambiar VERSION cada vez que se publique: los teléfonos se actualizan solos.
-const VERSION='2026-11-24.1';
+const VERSION='2026-11-24.2';
 // Mismo proyecto de Supabase que Cobros (tablas aparte, cr_*). La clave pública no es secreta:
 // lo que protege los datos son las reglas de supabase/cajas_rurales.sql.
 const SB_URL='https://shlolncjhfzqmcllwjrk.supabase.co';
@@ -311,7 +312,7 @@ function fila(m,f,conFecha){
   else saldo='Saldo '+sal(x.caja);
   return {id:m.id,r:r,titulo:tituloDe(m),sub:NC[m.cuenta]+' · '+(conFecha?diaCorto(m.ts)+' ':'')+horaDe(m.ts),monto:(r?'−':'+')+fmt(m.monto),saldo:saldo};
 }
-// Agrupa por día: etiqueta "Hoy" y "Ayer"; entre los demás días solo un pequeño espacio
+// Agrupa por día: etiqueta "Hoy", "Ayer" y el nombre del día en los demás (Domingo 22 nov)
 function claveDia(ts){const d=new Date(ts);return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();}
 function porDia(items,tsDe,filaDe){
   const h=new Date(),ay=new Date(h.getFullYear(),h.getMonth(),h.getDate()-1);
@@ -322,7 +323,7 @@ function porDia(items,tsDe,filaDe){
     if(k!==prev){
       if(k===kHoy)out+=`<div class="sepDia" role="heading" aria-level="3"><i aria-hidden="true"></i>Hoy</div>`;
       else if(k===kAyer)out+=`<div class="sepDia ayer" role="heading" aria-level="3"><i aria-hidden="true"></i>Ayer</div>`;
-      else if(prev!==null)out+=`<div class="hueco" aria-hidden="true"></div>`;
+      else{const d=new Date(tsDe(it));out+=`<div class="sepDia otro" role="heading" aria-level="3">${esc(DIAS[d.getDay()]+' '+d.getDate()+' '+MESES[d.getMonth()].slice(0,3)+(d.getFullYear()!==h.getFullYear()?' '+d.getFullYear():''))}</div>`;}
       prev=k;
     }
     out+=filaDe(it);
